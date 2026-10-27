@@ -1,0 +1,1586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aymora Weekly Match Engine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A working prototype of a weekly, explainable matchmaking engine for Aymora.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one calm reading column for the person's journey; wider grid only for the engine data. */
+:root {
+  --bg: #f6f3f7;
+  --surface: #ffffff;
+  --surface-2: #faf7fb;
+  --ink: #1d1721;
+  --muted: #6c6271;
+  --line: #e5dde8;
+  --accent: #8a1e4f;
+  --accent-ink: #ffffff;
+  --accent-soft: #f4e2eb;
+  --good: #2c7a57;
+  --good-soft: #e1f1e9;
+  --warn: #a76a14;
+  --series-2: #5b5262;
+
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius: 14px;
+  --col: 680px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131015; --surface: #1d1820; --surface-2: #231d27; --ink: #f2ebf3; --muted: #a99fae;
+    --line: #342b39; --accent: #e57aa8; --accent-ink: #1d0d15; --accent-soft: #3a2030;
+    --good: #6cc59a; --good-soft: #1b3328; --warn: #e2b05c; --series-2: #b9afbe;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131015; --surface: #1d1820; --surface-2: #231d27; --ink: #f2ebf3; --muted: #a99fae;
+  --line: #342b39; --accent: #e57aa8; --accent-ink: #1d0d15; --accent-soft: #3a2030;
+  --good: #6cc59a; --good-soft: #1b3328; --warn: #e2b05c; --series-2: #b9afbe;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.12; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+h1 { font-size: clamp(2rem, 5.2vw, 3.25rem); }
+h1 em { font-style: normal; color: var(--accent); }
+h2 { font-size: clamp(1.6rem, 3.6vw, 2.2rem); }
+h3 { font-size: 1.2rem; }
+p { margin: 0; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); max-width: 62ch; font-size: 1.05rem; }
+
+/* Header */
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.top-inner, main, .foot {
+  max-width: 1040px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.top-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-block: 12px; }
+.brand { display: flex; align-items: baseline; gap: 10px; text-decoration: none; color: var(--ink); }
+.wordmark { font-family: var(--display); font-weight: 700; font-size: 1.5rem; letter-spacing: -0.03em; }
+.brand-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs a {
+  text-decoration: none; color: var(--muted); font-weight: 500; font-size: 0.92rem;
+  padding: 6px 12px; border-radius: 999px;
+}
+.tabs a:hover { color: var(--ink); background: var(--surface); }
+.tabs a[aria-current="page"] { color: var(--accent-ink); background: var(--accent); }
+
+main { padding-block: 40px 56px; }
+.view { display: grid; gap: 28px; }
+.hero, .flow, .section-head { max-width: var(--col); width: 100%; margin: 0 auto; }
+.hero { display: grid; gap: 14px; }
+.section-head { display: grid; gap: 10px; max-width: none; margin: 0; }
+
+/* Buttons and inputs */
+.btn {
+  font: 600 0.98rem var(--body); cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  padding: 11px 20px; border-radius: 999px;
+}
+.btn:hover { filter: brightness(1.07); }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.ghost:hover { border-color: var(--ink); }
+.btn.link { background: none; border: 0; color: var(--muted); padding: 11px 4px; text-decoration: underline; text-underline-offset: 3px; }
+.btn:focus-visible, .tabs a:focus-visible, .opt:focus-within, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.row.spread { justify-content: space-between; }
+
+input[type="text"], input[type="number"], select, textarea {
+  font: 1rem var(--body); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%;
+}
+textarea { min-height: 90px; resize: vertical; }
+label.field { display: grid; gap: 6px; font-weight: 500; font-size: 0.92rem; min-width: 0; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.fields .full { grid-column: 1 / -1; }
+@media (max-width: 520px) { .fields { grid-template-columns: minmax(0, 1fr); } }
+
+/* Card that holds each step of the journey */
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: clamp(20px, 4vw, 32px); display: grid; gap: 20px;
+}
+.progress { display: flex; align-items: center; gap: 12px; }
+.progress-bar { flex: 1; height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.progress-bar span { display: block; height: 100%; background: var(--accent); transition: width 0.3s ease; }
+.q { font-family: var(--display); font-size: clamp(1.35rem, 3.4vw, 1.75rem); font-weight: 600; line-height: 1.2; text-wrap: balance; }
+
+.opts { display: grid; gap: 10px; }
+.opt {
+  display: flex; gap: 12px; align-items: center; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 12px; padding: 13px 16px; background: var(--surface-2);
+}
+.opt:hover { border-color: var(--muted); }
+.opt input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; flex: none; }
+.opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+
+.scale { display: grid; gap: 10px; }
+.scale-dots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.scale-dots label {
+  display: grid; place-items: center; cursor: pointer; height: 52px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface-2); font-family: var(--mono); font-weight: 500;
+}
+.scale-dots input { position: absolute; opacity: 0; pointer-events: none; }
+.scale-dots label:has(input:checked) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.scale-dots label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.scale-ends { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 0.88rem; }
+.scale-ends span:last-child { text-align: right; }
+
+/* Profile */
+.trait-list { display: grid; gap: 12px; }
+.trait { display: grid; grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr); gap: 12px; align-items: center; font-size: 0.93rem; }
+.pips { display: flex; gap: 5px; }
+.pips i { flex: 1; height: 8px; border-radius: 4px; background: var(--line); }
+.pips i.on { background: var(--accent); }
+.trait-ends { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 0.85rem; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); }
+.chip.accent { background: var(--accent-soft); border-color: transparent; color: var(--ink); }
+
+.funnel { display: grid; gap: 8px; }
+.funnel-row { display: grid; grid-template-columns: minmax(0, 1fr) 3.5rem; gap: 12px; align-items: center; font-size: 0.9rem; }
+.funnel-bar { height: 28px; border-radius: 8px; background: var(--surface-2); position: relative; overflow: hidden; }
+.funnel-bar span { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); border-right: 2px solid var(--accent); }
+.funnel-bar em { position: relative; font-style: normal; padding-left: 10px; line-height: 28px; white-space: nowrap; }
+.funnel-row b { font-family: var(--mono); font-weight: 500; text-align: right; }
+
+/* Introduction */
+.intro-head { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.avatar {
+  width: 64px; height: 64px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-family: var(--display); font-weight: 700; font-size: 1.4rem;
+  background: var(--accent-soft); color: var(--accent); border: 1px dashed var(--accent);
+}
+.intro-who { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.intro-who h3 { font-size: 1.6rem; }
+.score { text-align: right; }
+.score b { display: block; font-family: var(--display); font-size: 2.6rem; line-height: 1; color: var(--accent); }
+.score span { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+.block { display: grid; gap: 8px; }
+.block-label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.reasons { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.reasons li { padding-left: 22px; position: relative; }
+.reasons li::before { content: ""; position: absolute; left: 4px; top: 0.6em; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.note { padding: 14px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.note.starter { background: var(--accent-soft); border-color: transparent; }
+.photo-note { font-size: 0.85rem; color: var(--muted); }
+
+details.breakdown { border-top: 1px solid var(--line); padding-top: 14px; }
+details.breakdown summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+.bd { display: grid; gap: 10px; margin-top: 14px; }
+.bd-row { display: grid; grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 3rem; gap: 10px; align-items: center; font-size: 0.88rem; }
+.bd-track { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.bd-track span { display: block; height: 100%; background: var(--accent); }
+.bd-row b { font-family: var(--mono); font-weight: 500; font-size: 0.8rem; text-align: right; color: var(--muted); }
+
+.outcome { display: grid; gap: 14px; }
+.outcome.good { border-color: var(--good); }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); width: fit-content; }
+.badge.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.badge.accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.chip-btn { font: 500 0.9rem var(--body); cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.chip-btn:hover { border-color: var(--accent); }
+.chip-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.weekline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 0.88rem; color: var(--muted); }
+
+/* Engine view */
+#engine-out, #how-out { display: grid; gap: 20px; }
+.controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.controls select { width: auto; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 820px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; display: grid; gap: 16px; min-width: 0; align-content: start; }
+.panel h3 { font-size: 1.15rem; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; min-width: 560px; }
+th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; font-size: 0.85rem; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+thead th { color: var(--muted); font-family: var(--mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+col.ours, td.ours, th.ours { background: var(--accent-soft); }
+th .why, td .why { display: block; font-weight: 400; color: var(--muted); font-size: 0.8rem; font-family: var(--body); }
+
+.hbars { display: grid; gap: 12px; }
+.hbar { display: grid; gap: 4px; font-size: 0.88rem; }
+.hbar-top { display: flex; justify-content: space-between; gap: 10px; }
+.hbar-top b { font-family: var(--mono); font-weight: 500; }
+.hbar-track { height: 12px; background: var(--surface-2); border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.hbar-track span { display: block; height: 100%; background: var(--series-2); }
+.hbar.ours .hbar-track span { background: var(--accent); }
+
+.chart svg { width: 100%; height: auto; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem; color: var(--muted); }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+
+/* How it works */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); counter-increment: s; }
+.steps li::before { content: counter(s, decimal-leading-zero); font-family: var(--mono); color: var(--accent); font-size: 0.95rem; padding-top: 2px; }
+.steps h3 { margin-bottom: 4px; }
+.steps p { color: var(--muted); max-width: 70ch; }
+
+.foot { padding-block: 24px 40px; color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--line); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.fade { animation: rise 0.35s ease both; }
+@keyframes rise { from { transform: translateY(6px); } to { transform: none; } }
+
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#try" aria-label="Aymora Weekly Match Engine">
+      <span class="wordmark">aymora</span>
+      <span class="brand-sub">Weekly Match Engine</span>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#try" data-tab="try">Try it</a>
+      <a href="#engine" data-tab="engine">Under the hood</a>
+      <a href="#how" data-tab="how">How it works</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- TRY IT -->
+  <section id="view-try" class="view">
+    <div class="hero">
+      <p class="eyebrow">Prototype · Aymora Tech Challenge</p>
+      <h1>One introduction a week, <em>chosen for everyone at once.</em></h1>
+      <p class="lede">Aymora promises at least one meaningful match every week, with no quality compromise. Picking each person's top match doesn't keep that promise, because the same few people end up at the top of everyone's list. This engine scores compatibility, explains every introduction, and pairs the whole pool together each week so the promise holds.</p>
+    </div>
+
+    <div class="flow" id="flow" aria-live="polite"></div>
+  </section>
+
+  <!-- UNDER THE HOOD -->
+  <section id="view-engine" class="view" hidden>
+    <div class="section-head">
+      <p class="eyebrow">Simulation on synthetic people</p>
+      <h2>Same pool, three ways to match</h2>
+      <p class="lede">Every number below is computed live in your browser on a generated pool of people. Change the pool size or draw a new pool to see how the results hold up.</p>
+    </div>
+    <div class="controls">
+      <label for="pool-size">Pool size</label>
+      <select id="pool-size">
+        <option value="200">200 people</option>
+        <option value="300" selected>300 people</option>
+        <option value="500">500 people</option>
+      </select>
+      <button class="btn ghost" id="new-pool" type="button">Draw a new pool</button>
+      <span class="mono small" id="sim-meta"></span>
+    </div>
+    <div id="engine-out"><p class="muted">Running the simulation…</p></div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="view-how" class="view" hidden>
+    <div class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2>From questionnaire to Sunday introduction</h2>
+    </div>
+    <div id="how-out"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Built by Kanak Tanwar for the Aymora Tech Challenge. Independent prototype, not affiliated with Aymora. Everyone in the pool is generated; no real people or data.</p>
+</footer>
+
+<script>
+/*
+ * Aymora Weekly Match Engine
+ * --------------------------
+ * 1. compatibility(a, b)  -> hard gates + weighted, explainable score (0-100)
+ * 2. explain(a, b, result) -> "why you two", "worth talking about", conversation starter
+ * 3. weeklyMatch(users)   -> one introduction per person per week, chosen globally
+ *
+ * Plain JavaScript, no dependencies. Works in the browser (window.Aymora)
+ * and in Node (module.exports) so the same code is tested and demoed.
+ */
+(function (root) {
+  const A = (root.Aymora = root.Aymora || {});
+
+  // ---------------------------------------------------------------------------
+  // Configuration
+  // ---------------------------------------------------------------------------
+  const BASE_WEIGHTS = {
+    intent: 0.18,      // what each person is looking for
+    kids: 0.07,        // children someday
+    values: 0.24,      // family, ambition, tradition
+    personality: 0.16, // social energy, planning style
+    conflict: 0.10,    // how each handles disagreements
+    care: 0.05,        // how each shows care
+    lifestyle: 0.10,   // diet, drinking, smoking
+    interests: 0.10,   // overlap in "perfect Sunday"
+  };
+
+  // "No quality compromise": an introduction must clear this bar.
+  const QUALITY_BAR = 72;
+  const MAX_AGE_GAP = 6;
+  const LONG_DISTANCE_PENALTY = 4; // points
+
+  const INTENT = {
+    marriage: { marriage: 1, long_term: 0.6, exploring: null },
+    long_term: { marriage: 0.6, long_term: 1, exploring: 0.5 },
+    exploring: { marriage: null, long_term: 0.5, exploring: 0.9 },
+  };
+  const KIDS = {
+    yes: { yes: 1, open: 0.75, no: null },
+    open: { yes: 0.75, open: 0.85, no: 0.75 },
+    no: { yes: null, open: 0.75, no: 1 },
+  };
+  const CONFLICT = {
+    talk: { talk: 1, time: 0.8, letgo: 0.4 },
+    time: { talk: 0.8, time: 0.9, letgo: 0.6 },
+    letgo: { talk: 0.4, time: 0.6, letgo: 0.5 }, // two avoiders rarely resolve things
+  };
+  const DIET = {
+    veg: { veg: 1, egg: 0.8, nonveg: 0.6 },
+    egg: { veg: 0.8, egg: 1, nonveg: 0.8 },
+    nonveg: { veg: 0.6, egg: 0.8, nonveg: 1 },
+  };
+
+  // ---------------------------------------------------------------------------
+  // Hard gates: things that are never "compensated" by a high score elsewhere
+  // ---------------------------------------------------------------------------
+  function gate(a, b) {
+    if (a.id === b.id) return 'self';
+    if (!a.interestedIn.includes(b.gender) || !b.interestedIn.includes(a.gender)) return 'preferences';
+    if (Math.abs(a.age - b.age) > MAX_AGE_GAP) return 'age';
+    if (INTENT[a.intent][b.intent] === null) return 'intent';
+    if (KIDS[a.kids][b.kids] === null) return 'kids';
+    if (breaks(a, b) || breaks(b, a)) return 'dealbreaker';
+    if (a.city !== b.city && !a.openToMove && !b.openToMove) return 'distance';
+    return null;
+  }
+
+  // does b trip one of a's dealbreakers?
+  function breaks(a, b) {
+    const d = a.dealbreakers || [];
+    if (d.includes('smoker') && b.habits === 'smokes') return true;
+    if (d.includes('drinker') && (b.habits === 'drinks' || b.habits === 'smokes')) return true;
+    if (d.includes('nonveg') && b.diet === 'nonveg') return true;
+    if (d.includes('longdistance') && a.city !== b.city) return true;
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Soft score
+  // ---------------------------------------------------------------------------
+  const sim5 = (x, y) => 1 - Math.abs(x - y) / 4; // similarity on a 1-5 scale
+
+  function parts(a, b) {
+    const v = ['family', 'ambition', 'tradition'];
+    const values = v.reduce((s, k) => s + sim5(a.values[k], b.values[k]), 0) / v.length;
+
+    const social = sim5(a.personality.social, b.personality.social);
+    const pd = Math.abs(a.personality.planning - b.personality.planning);
+    const planning = pd <= 1 ? 1 : 1 - (pd - 1) / 3; // a small difference is healthy
+    const personality = 0.6 * social + 0.4 * planning;
+
+    const habits = a.habits === b.habits ? 1 : 0.7;
+    const lifestyle = 0.5 * DIET[a.diet][b.diet] + 0.5 * habits;
+
+    const ta = new Set(a.tags || []), tb = new Set(b.tags || []);
+    const shared = [...ta].filter((t) => tb.has(t));
+    const union = new Set([...ta, ...tb]).size || 1;
+    const interests = 0.4 + 0.6 * (shared.length / union);
+
+    return {
+      intent: INTENT[a.intent][b.intent],
+      kids: KIDS[a.kids][b.kids],
+      values,
+      personality,
+      conflict: CONFLICT[a.conflict][b.conflict],
+      care: a.care === b.care ? 1 : 0.6,
+      lifestyle,
+      interests,
+    };
+  }
+
+  // Each person can tune how much a dimension matters to them (feedback loop).
+  // A pair uses the average of both people's multipliers.
+  function pairWeights(a, b) {
+    const w = {};
+    let total = 0;
+    for (const k in BASE_WEIGHTS) {
+      const ma = (a.weights && a.weights[k]) || 1;
+      const mb = (b.weights && b.weights[k]) || 1;
+      w[k] = BASE_WEIGHTS[k] * ((ma + mb) / 2);
+      total += w[k];
+    }
+    for (const k in w) w[k] /= total;
+    return w;
+  }
+
+  function compatibility(a, b) {
+    const blocked = gate(a, b);
+    if (blocked) return { ok: false, blocked, score: 0 };
+    const p = parts(a, b);
+    const w = pairWeights(a, b);
+    let raw = 0;
+    for (const k in w) raw += w[k] * p[k];
+    const distance = a.city !== b.city ? LONG_DISTANCE_PENALTY * Math.max(a.distanceCare || 1, b.distanceCare || 1) : 0;
+    const score = Math.max(0, Math.round(raw * 100 - distance));
+    return { ok: true, blocked: null, score, parts: p, weights: w, distance };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Explanations — written from "you" (a) to "them" (b)
+  // ---------------------------------------------------------------------------
+  const CARE_PHRASE = {
+    words: 'saying it out loud',
+    time: 'making time',
+    acts: 'doing things for each other',
+    gifts: 'small, thoughtful gifts',
+    touch: 'being physically close',
+  };
+  const PLAN_WORD = (x) => (x >= 4 ? 'plans trips down to the hour' : x <= 2 ? 'would rather wing it' : 'likes a rough plan');
+  const SOCIAL_WORD = (x) => (x >= 4 ? 'comes alive with a full social calendar' : x <= 2 ? 'recharges with a quiet night in' : 'likes a mix of plans and quiet');
+  const AMBITION_WORD = (x) => (x >= 4 ? 'is all-in on career right now' : x <= 2 ? 'keeps work in its place' : 'balances career with everything else');
+  const FAMILY_WORD = (x) => (x >= 4 ? 'decides big things together with family' : x <= 2 ? 'makes big decisions independently' : 'listens to family but decides alone');
+  const TRADITION_WORD = (x) => (x >= 4 ? 'holds festivals and rituals close' : x <= 2 ? "isn't very traditional" : 'enjoys traditions without being strict');
+
+  function reasons(a, b, r) {
+    const out = [];
+    const add = (strength, text) => out.push({ strength, text });
+    const w = r.weights;
+
+    if (a.intent === b.intent) {
+      add(w.intent * 1.2, {
+        marriage: "You're both hoping to marry in the next few years.",
+        long_term: 'You both want something long-term, without a fixed timeline.',
+        exploring: "You're both still working out what you want, so there's no pressure on either side.",
+      }[a.intent]);
+    }
+    if (a.kids === b.kids && a.kids !== 'open') {
+      add(w.kids * 1.5, a.kids === 'yes' ? 'You both see children in your future.' : "Neither of you wants children, and you're on the same page about it.");
+    }
+    const V = a.values, U = b.values;
+    if (V.family >= 4 && U.family >= 4) add(w.values * 0.9, 'Family has a real say in big decisions for both of you.');
+    else if (V.family <= 2 && U.family <= 2) add(w.values * 0.9, 'You both make big decisions on your own terms.');
+    if (V.ambition >= 4 && U.ambition >= 4) add(w.values * 0.8, 'Career is a big focus for both of you right now.');
+    else if (V.ambition <= 2 && U.ambition <= 2) add(w.values * 0.8, 'Neither of you lives for work.');
+    if (V.tradition >= 4 && U.tradition >= 4) add(w.values * 0.8, 'Festivals and traditions matter to both of you.');
+    else if (V.tradition <= 2 && U.tradition <= 2) add(w.values * 0.7, "You're both relaxed about rituals and traditions.");
+    const S = a.personality.social, T = b.personality.social;
+    if (S <= 2 && T <= 2) add(w.personality, 'You both recharge with a quiet night in.');
+    else if (S >= 4 && T >= 4) add(w.personality, 'You both come alive with a full social calendar.');
+    if (a.conflict === b.conflict && a.conflict !== 'letgo') {
+      add(w.conflict * 1.3, a.conflict === 'talk' ? 'You both prefer to talk things out straight away.' : 'You both need a little space before a hard conversation, and you get that about each other.');
+    }
+    if (a.care === b.care) add(w.care * 1.6, `You show care the same way: ${CARE_PHRASE[a.care]}.`);
+    const shared = (a.tags || []).filter((t) => (b.tags || []).includes(t));
+    if (shared.length) add(w.interests * 1.4, `You both mentioned ${listJoin(shared.slice(0, 2))} in your perfect Sunday.`);
+    if (a.diet === b.diet && a.diet === 'veg') add(w.lifestyle * 0.6, "You're both vegetarian.");
+
+    out.sort((x, y) => y.strength - x.strength);
+    return out.slice(0, 3).map((x) => x.text);
+  }
+
+  // The biggest honest difference — matchmakers mention these, apps hide them.
+  function difference(a, b) {
+    const name = b.name.split(' ')[0];
+    const gaps = [
+      { gap: Math.abs(a.personality.planning - b.personality.planning), text: `${name} ${PLAN_WORD(b.personality.planning)}, and you ${PLAN_WORD(a.personality.planning).replace('plans', 'plan').replace('likes', 'like')}.` },
+      { gap: Math.abs(a.personality.social - b.personality.social), text: `${name} ${SOCIAL_WORD(b.personality.social)}; you ${SOCIAL_WORD(a.personality.social).replace('comes', 'come').replace('recharges', 'recharge').replace('likes', 'like')}.` },
+      { gap: Math.abs(a.values.ambition - b.values.ambition), text: `${name} ${AMBITION_WORD(b.values.ambition)}. Worth asking what a good week looks like for each of you.` },
+      { gap: Math.abs(a.values.family - b.values.family), text: `${name} ${FAMILY_WORD(b.values.family)}. Talk early about how family fits into decisions.` },
+      { gap: Math.abs(a.values.tradition - b.values.tradition), text: `${name} ${TRADITION_WORD(b.values.tradition)}. Ask how they spend Diwali, Eid or Christmas.` },
+    ];
+    if (a.city !== b.city) gaps.push({ gap: 2.5, text: `${name} lives in ${b.city}. Talk about who would move, and when.` });
+    gaps.sort((x, y) => y.gap - x.gap);
+    return gaps[0].gap >= 2 ? gaps[0].text : `You're unusually aligned. The interesting part will be finding where you aren't.`;
+  }
+
+  const STARTERS = {
+    coffee: 'Ask {n} where they get their coffee and whether it is worth the trip.',
+    books: 'Ask {n} what they are reading right now, and whether they would recommend it.',
+    trek: 'Ask {n} about the best trek they have done and the one still on their list.',
+    cricket: 'Ask {n} which match they still argue about.',
+    cooking: 'Ask {n} what they cook when they want to impress someone.',
+    movies: 'Ask {n} which film they could rewatch every month.',
+    music: 'Ask {n} what has been on repeat this week.',
+    beach: "Ask {n} about their favourite stretch of coast. Gokarna or Goa is a fair first debate.",
+    family: 'Ask {n} what a typical Sunday lunch at home looks like.',
+    gym: 'Ask {n} whether they are a morning workout person, and how.',
+    gaming: 'Ask {n} what they are playing right now.',
+    art: 'Ask {n} what they have been making lately.',
+    temple: 'Ask {n} which temple or quiet place they go to reset.',
+    sleep: 'Ask {n} what time a perfect Sunday actually starts.',
+    food: 'Ask {n} for the one place in the city you have to try.',
+    friends: 'Ask {n} about the friends they spend Sundays with.',
+  };
+
+  function starter(a, b) {
+    const name = b.name.split(' ')[0];
+    const shared = (a.tags || []).filter((t) => (b.tags || []).includes(t));
+    const tag = shared[0] || (b.tags || [])[0];
+    if (tag && STARTERS[tag]) return STARTERS[tag].replace('{n}', name);
+    return `Ask ${name} about their perfect Sunday. They wrote: "${b.sunday}"`;
+  }
+
+  function explain(a, b, r) {
+    r = r || compatibility(a, b);
+    return { reasons: reasons(a, b, r), difference: difference(a, b), starter: starter(a, b) };
+  }
+
+  function listJoin(xs) {
+    return xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Weekly matching
+  // ---------------------------------------------------------------------------
+  // Goal: everyone with at least one option above the quality bar gets exactly
+  // one introduction this week, while keeping total compatibility high.
+  //
+  //   1. Build the "quality graph": an edge for every pair that clears the
+  //      gates and the quality bar and hasn't been introduced before.
+  //   2. Constrained-first greedy: people who waited last week go first, then
+  //      people with the fewest options, each taking their best free option.
+  //   3. Augmenting pass: for anyone left out, try to free up a partner by
+  //      re-pairing them (u-a, b-w instead of a-b). Raises coverage.
+  //   4. Swap pass: for two pairs (a-b, c-d), switch to (a-c, b-d) or
+  //      (a-d, b-c) if the total score goes up. Raises quality.
+  //   5. Anyone still unmatched gets priority next week (carry-over).
+  function weeklyMatch(users, opts) {
+    opts = opts || {};
+    const bar = opts.qualityBar != null ? opts.qualityBar : QUALITY_BAR;
+    const history = opts.history || new Set();
+    const priority = opts.priority || {};
+    const n = users.length;
+
+    const cand = Array.from({ length: n }, () => []);
+    const score = new Map();
+    const key = (i, j) => (i < j ? i * n + j : j * n + i);
+    let feasibleEdges = 0;
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (history.has(pairKey(users[i].id, users[j].id))) continue;
+        const r = compatibility(users[i], users[j]);
+        if (!r.ok) continue;
+        feasibleEdges++;
+        if (r.score < bar) continue;
+        cand[i].push(j);
+        cand[j].push(i);
+        score.set(key(i, j), r.score);
+      }
+    }
+    const s = (i, j) => score.get(key(i, j));
+    for (let i = 0; i < n; i++) cand[i].sort((x, y) => s(i, y) - s(i, x));
+
+    const partner = new Int32Array(n).fill(-1);
+    const order = [...Array(n).keys()].sort((x, y) =>
+      (priority[users[y].id] || 0) - (priority[users[x].id] || 0) ||
+      cand[x].length - cand[y].length ||
+      hash(users[x].id) - hash(users[y].id)
+    );
+
+    // 2. constrained-first greedy
+    for (const i of order) {
+      if (partner[i] !== -1) continue;
+      for (const j of cand[i]) {
+        if (partner[j] === -1) { partner[i] = j; partner[j] = i; break; }
+      }
+    }
+
+    // 3. augmenting pass: for anyone left out, look for a chain of re-pairings
+    //    u-a, (a's partner b)-c, (c's partner d)-e ... that ends at a free
+    //    person. Each successful chain adds one more introduction.
+    const MAX_DEPTH = 10;
+    function augment(u, seen, depth) {
+      if (depth > MAX_DEPTH) return false;
+      for (const a of cand[u]) {
+        if (seen.has(a)) continue;
+        seen.add(a);
+        const b = partner[a];
+        if (b === -1) { link(u, a); return true; }
+        if (b === u) continue;
+        seen.add(b);
+        partner[b] = -1; partner[a] = -1;
+        if (augment(b, seen, depth + 1)) { link(u, a); return true; }
+        link(a, b); // undo
+      }
+      return false;
+    }
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (const u of order) {
+        if (partner[u] !== -1 || !cand[u].length) continue;
+        if (augment(u, new Set([u]), 0)) changed = true;
+      }
+      if (!changed) break;
+    }
+
+    // 4. swap pass
+    for (let pass = 0; pass < 4; pass++) {
+      let improved = false;
+      const pairs = currentPairs(partner);
+      for (let x = 0; x < pairs.length; x++) {
+        for (let y = x + 1; y < pairs.length; y++) {
+          const [a, b] = pairs[x], [c, d] = pairs[y];
+          if (partner[a] !== b || partner[c] !== d) continue;
+          const now = s(a, b) + s(c, d);
+          const o1 = s(a, c) != null && s(b, d) != null ? s(a, c) + s(b, d) : -1;
+          const o2 = s(a, d) != null && s(b, c) != null ? s(a, d) + s(b, c) : -1;
+          if (o1 > now && o1 >= o2) { link(a, c); link(b, d); improved = true; }
+          else if (o2 > now) { link(a, d); link(b, c); improved = true; }
+        }
+      }
+      if (!improved) break;
+    }
+    function link(i, j) { partner[i] = j; partner[j] = i; }
+
+    const pairs = currentPairs(partner).map(([i, j]) => ({ a: users[i], b: users[j], score: s(i, j) }));
+    const unmatched = [];
+    const options = {};
+    for (let i = 0; i < n; i++) {
+      options[users[i].id] = cand[i].length;
+      if (partner[i] === -1) unmatched.push(users[i]);
+    }
+    return { pairs, unmatched, options, feasibleEdges, qualityBar: bar };
+  }
+
+  function currentPairs(partner) {
+    const out = [];
+    for (let i = 0; i < partner.length; i++) if (partner[i] > i) out.push([i, partner[i]]);
+    return out;
+  }
+
+  function pairKey(x, y) { return x < y ? x + '|' + y : y + '|' + x; }
+
+  function hash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+
+  // Turn a free-text "perfect Sunday" into interest tags.
+  const TAG_WORDS = {
+    coffee: ['coffee', 'café', 'cafe', 'chai', 'tea'],
+    books: ['book', 'read', 'novel', 'library'],
+    trek: ['trek', 'hike', 'hiking', 'mountain', 'trail'],
+    cricket: ['cricket', 'match', 'ipl'],
+    cooking: ['cook', 'recipe', 'bake', 'baking'],
+    movies: ['movie', 'film', 'cinema', 'netflix', 'series'],
+    music: ['music', 'song', 'playlist', 'guitar', 'concert', 'gig'],
+    beach: ['beach', 'sea', 'coast', 'ocean'],
+    family: ['family', 'parents', 'mom', 'dad', 'amma', 'home'],
+    gym: ['gym', 'run', 'workout', 'yoga', 'swim', 'cycle'],
+    gaming: ['game', 'gaming', 'playstation', 'board game'],
+    art: ['paint', 'draw', 'sketch', 'art', 'pottery', 'photograph'],
+    temple: ['temple', 'church', 'mosque', 'pray', 'meditat'],
+    sleep: ['sleep', 'nap', 'lazy', 'slow morning'],
+    food: ['food', 'brunch', 'breakfast', 'lunch', 'biryani', 'dosa', 'restaurant', 'eat'],
+    friends: ['friends', 'gang', 'squad'],
+  };
+  function tagText(text) {
+    const t = (text || '').toLowerCase();
+    return Object.keys(TAG_WORDS).filter((k) => TAG_WORDS[k].some((w) => t.includes(w)));
+  }
+
+  // Probability someone says yes to an introduction, used only in simulations.
+  function acceptChance(score) { return 1 / (1 + Math.exp(-(score - 76) / 5)); }
+
+  Object.assign(A, {
+    BASE_WEIGHTS, QUALITY_BAR, MAX_AGE_GAP,
+    gate, compatibility, explain, weeklyMatch, pairKey, acceptChance, hash, tagText,
+  });
+  if (typeof module !== 'undefined' && module.exports) module.exports = A;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/*
+ * Synthetic people for the demo. Deterministic (seeded), so every run of the
+ * demo and the tests sees the same pool. None of these people are real.
+ */
+(function (root) {
+  const A = (root.Aymora = root.Aymora || {});
+
+  function rng(seed) {
+    let t = seed >>> 0;
+    return function () {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const FEMALE = ['Ananya', 'Diya', 'Ira', 'Kavya', 'Meera', 'Nisha', 'Priya', 'Riya', 'Saanvi', 'Tara', 'Aditi', 'Ishita', 'Lavanya', 'Pooja', 'Sneha', 'Shreya', 'Zoya', 'Fatima', 'Neha', 'Anjali', 'Rhea', 'Mehak', 'Divya', 'Swati', 'Aarohi', 'Nandini', 'Trisha', 'Sana', 'Keerthi', 'Pallavi'];
+  const MALE = ['Aarav', 'Arjun', 'Dev', 'Ishaan', 'Kabir', 'Karan', 'Nikhil', 'Rahul', 'Rohan', 'Siddharth', 'Varun', 'Vihaan', 'Aditya', 'Akash', 'Harsh', 'Manav', 'Omkar', 'Pranav', 'Rishi', 'Sameer', 'Tanmay', 'Yash', 'Zaid', 'Imran', 'Abhishek', 'Kunal', 'Neeraj', 'Pratik', 'Shreyas', 'Vikram'];
+  const NB = ['Ari', 'Kiran', 'Noor', 'Sasha', 'Rumi', 'Jaya'];
+  const SURNAMES = ['Shetty', 'Rao', 'Iyer', 'Nair', 'Kulkarni', 'Sharma', 'Verma', 'Gupta', 'Mehta', 'Patel', 'Reddy', 'Pai', 'Kamath', 'Menon', 'Das', 'Banerjee', 'Khan', 'Fernandes', "D'Souza", 'Joshi', 'Bhat', 'Singh', 'Malhotra', 'Chopra', 'Hegde'];
+
+  const CITIES = [['Bengaluru', 0.3], ['Mumbai', 0.18], ['Delhi', 0.14], ['Pune', 0.12], ['Hyderabad', 0.12], ['Mangaluru', 0.07], ['Chennai', 0.07]];
+
+  // perfect-Sunday sentences, tagged with what they mention
+  const SUNDAYS = [
+    ['Filter coffee, the newspaper, and a long nap after lunch.', ['coffee', 'sleep']],
+    ['A sunrise trek, then dosa somewhere on the way back.', ['trek', 'food']],
+    ['Cooking a big lunch for friends and arguing about cricket.', ['cooking', 'friends', 'cricket']],
+    ['Bookshop crawl and a quiet café corner.', ['books', 'coffee']],
+    ['Beach in the evening, nothing planned before that.', ['beach', 'sleep']],
+    ['Lunch at home with family, then a movie.', ['family', 'movies']],
+    ['Gym in the morning, brunch, then gaming with friends.', ['gym', 'gaming', 'friends']],
+    ['Painting on the balcony with music on.', ['art', 'music']],
+    ['Temple visit with my parents and a long walk after.', ['temple', 'family']],
+    ['Watching the match with friends and too much biryani.', ['cricket', 'friends', 'food']],
+    ['Sleeping in, then a new restaurant I have been meaning to try.', ['sleep', 'food']],
+    ['Reading in the park until it gets dark.', ['books']],
+    ['A drive to the coast with a playlist I made for it.', ['beach', 'music']],
+    ['Trying a new recipe and failing at it happily.', ['cooking']],
+    ['Board games and chai with old friends.', ['friends', 'gaming']],
+    ['A film marathon with snacks and zero guilt.', ['movies']],
+    ['A slow morning, a long run, and a good book.', ['gym', 'books']],
+    ['Live music somewhere small and loud.', ['music', 'friends']],
+  ];
+
+  const pick = (r, xs) => xs[Math.floor(r() * xs.length)];
+  function weighted(r, pairs) {
+    let x = r(), acc = 0;
+    for (const [v, p] of pairs) { acc += p; if (x <= acc) return v; }
+    return pairs[pairs.length - 1][0];
+  }
+  const likert = (r, bias) => Math.max(1, Math.min(5, Math.round(3 + bias + (r() - 0.5) * 3.2)));
+
+  function makePerson(r, i) {
+    const gender = weighted(r, [['male', 0.48], ['female', 0.48], ['nonbinary', 0.04]]);
+    const first = gender === 'male' ? pick(r, MALE) : gender === 'female' ? pick(r, FEMALE) : pick(r, NB);
+    let interestedIn;
+    if (gender === 'nonbinary') interestedIn = ['male', 'female', 'nonbinary'];
+    else {
+      const other = gender === 'male' ? 'female' : 'male';
+      interestedIn = weighted(r, [[[other], 0.9], [[gender], 0.05], [['male', 'female', 'nonbinary'], 0.05]]);
+    }
+
+    const intent = weighted(r, [['marriage', 0.35], ['long_term', 0.45], ['exploring', 0.2]]);
+    const traditional = intent === 'marriage' ? 0.5 : intent === 'exploring' ? -0.4 : 0;
+
+    const habits = weighted(r, [['none', 0.5], ['drinks', 0.4], ['smokes', 0.1]]);
+    const diet = weighted(r, [['veg', 0.35], ['egg', 0.1], ['nonveg', 0.55]]);
+    const dealbreakers = [];
+    if (habits !== 'smokes' && r() < 0.45) dealbreakers.push('smoker');
+    if (habits === 'none' && r() < 0.2) dealbreakers.push('drinker');
+    if (diet === 'veg' && r() < 0.3) dealbreakers.push('nonveg');
+    if (r() < 0.15) dealbreakers.push('longdistance');
+
+    const [sunday, tags] = pick(r, SUNDAYS);
+    return {
+      id: 'p' + String(i).padStart(4, '0'),
+      name: first + ' ' + pick(r, SURNAMES),
+      age: 22 + Math.floor(r() * 12),
+      gender,
+      interestedIn,
+      city: weighted(r, CITIES),
+      openToMove: r() < 0.35,
+      intent,
+      kids: intent === 'exploring' ? weighted(r, [['open', 0.6], ['yes', 0.2], ['no', 0.2]]) : weighted(r, [['yes', 0.6], ['open', 0.28], ['no', 0.12]]),
+      values: { family: likert(r, traditional), ambition: likert(r, 0), tradition: likert(r, traditional) },
+      personality: { social: likert(r, 0), planning: likert(r, 0) },
+      conflict: weighted(r, [['talk', 0.4], ['time', 0.45], ['letgo', 0.15]]),
+      care: weighted(r, [['time', 0.3], ['acts', 0.25], ['words', 0.2], ['touch', 0.15], ['gifts', 0.1]]),
+      diet,
+      habits,
+      dealbreakers,
+      sunday,
+      tags,
+      // How "swipeable" a profile photo is. Skewed: a few profiles have most of it.
+      // Aymora's engine never reads this. Only the swipe-feed baseline does.
+      appeal: Math.pow(r(), 2.2),
+      weights: {},
+    };
+  }
+
+  function makePool(size, seed) {
+    const r = rng(seed == null ? 2026 : seed);
+    return Array.from({ length: size }, (_, i) => makePerson(r, i + 1));
+  }
+
+  // A filled-in sample for "Use a sample person" in the demo.
+  const SAMPLE_USER = {
+    id: 'you',
+    name: 'Kanak',
+    age: 23,
+    gender: 'male',
+    interestedIn: ['female'],
+    city: 'Mangaluru',
+    openToMove: true,
+    intent: 'long_term',
+    kids: 'open',
+    values: { family: 3, ambition: 4, tradition: 3 },
+    personality: { social: 2, planning: 4 },
+    conflict: 'talk',
+    care: 'time',
+    diet: 'nonveg',
+    habits: 'none',
+    dealbreakers: ['smoker'],
+    sunday: 'A sunrise trek, then a long breakfast and a good book.',
+    tags: ['trek', 'food', 'books'],
+    weights: {},
+  };
+
+  Object.assign(A, { rng, makePool, SAMPLE_USER, SUNDAY_TAGS: Object.keys({ coffee: 1, books: 1, trek: 1, cricket: 1, cooking: 1, movies: 1, music: 1, beach: 1, family: 1, gym: 1, gaming: 1, art: 1, temple: 1, sleep: 1, food: 1, friends: 1 }) });
+  if (typeof module !== 'undefined' && module.exports) module.exports = A;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/*
+ * Simulations that compare matching strategies on the same synthetic pool.
+ * These are illustrations under stated assumptions, not predictions.
+ */
+(function (root) {
+  const A = (root.Aymora = root.Aymora || {});
+
+  // ---- Baseline 1: a swipe feed ---------------------------------------------
+  // Each person is shown a random feed of profiles that fit their gender
+  // preference and likes based mostly on photo appeal. A match = both liked.
+  function swipeFeed(users, opts) {
+    opts = opts || {};
+    const r = A.rng(opts.seed || 7);
+    const feedSize = opts.feedSize || 40;
+    const likes = new Map(); // id -> Set of liked ids
+    const inbound = new Map(users.map((u) => [u.id, 0]));
+    const totalLikes = { n: 0 };
+
+    for (const u of users) {
+      const visible = users.filter((v) => v.id !== u.id && u.interestedIn.includes(v.gender) && v.interestedIn.includes(u.gender));
+      const set = new Set();
+      for (let k = 0; k < Math.min(feedSize, visible.length); k++) {
+        const v = visible[Math.floor(r() * visible.length)];
+        if (r() < 0.04 + 0.7 * v.appeal) { set.add(v.id); inbound.set(v.id, inbound.get(v.id) + 1); totalLikes.n++; }
+      }
+      likes.set(u.id, set);
+    }
+
+    const byId = new Map(users.map((u) => [u.id, u]));
+    const matched = new Set();
+    const scores = [];
+    for (const u of users) {
+      for (const vid of likes.get(u.id)) {
+        if (u.id < vid && likes.get(vid) && likes.get(vid).has(u.id)) {
+          matched.add(u.id); matched.add(vid);
+          const c = A.compatibility(u, byId.get(vid));
+          scores.push(c.ok ? c.score : 0);
+        }
+      }
+    }
+    const sorted = [...inbound.values()].sort((a, b) => b - a);
+    const top10 = sorted.slice(0, Math.ceil(users.length * 0.1)).reduce((s, x) => s + x, 0);
+    return {
+      name: 'Swipe feed',
+      coverage: matched.size / users.length,
+      avgScore: avg(scores),
+      goodShare: scores.length ? scores.filter((s) => s >= A.QUALITY_BAR).length / scores.length : 0,
+      topShare: totalLikes.n ? top10 / totalLikes.n : 0,
+      zeroLikes: sorted.filter((x) => x === 0).length / users.length,
+    };
+  }
+
+  // ---- Baseline 2: best pairs first -----------------------------------------
+  // Sort every quality pair by score and take it if both people are free.
+  function bestPairsFirst(users) {
+    const edges = [];
+    for (let i = 0; i < users.length; i++)
+      for (let j = i + 1; j < users.length; j++) {
+        const c = A.compatibility(users[i], users[j]);
+        if (c.ok && c.score >= A.QUALITY_BAR) edges.push([i, j, c.score]);
+      }
+    edges.sort((x, y) => y[2] - x[2]);
+    const used = new Set();
+    const scores = [];
+    for (const [i, j, s] of edges) {
+      if (used.has(i) || used.has(j)) continue;
+      used.add(i); used.add(j); scores.push(s);
+    }
+    return { name: 'Best pairs first', coverage: used.size / users.length, avgScore: avg(scores), goodShare: 1, topShare: null };
+  }
+
+  // ---- Aymora weekly engine ---------------------------------------------------
+  function engine(users) {
+    const res = A.weeklyMatch(users);
+    const scores = res.pairs.map((p) => p.score);
+    return { name: 'Aymora weekly engine', coverage: (res.pairs.length * 2) / users.length, avgScore: avg(scores), goodShare: 1, topShare: null, result: res };
+  }
+
+  // People with zero quality options can't be helped by any algorithm this week.
+  function ceiling(users) {
+    const res = A.weeklyMatch(users);
+    const reachable = Object.values(res.options).filter((x) => x > 0).length;
+    return reachable / users.length;
+  }
+
+  // ---- Several weeks in a row -------------------------------------------------
+  // No repeat introductions; anyone unmatched goes first next week; each side
+  // says yes with a probability that rises with the score.
+  function weeks(users, count, seed) {
+    const r = A.rng(seed || 11);
+    const history = new Set();
+    const priority = {};
+    const out = [];
+    const everMutual = new Set();
+    const everIntro = new Set();
+    for (let w = 1; w <= count; w++) {
+      const res = A.weeklyMatch(users, { history, priority });
+      let mutual = 0;
+      for (const p of res.pairs) {
+        history.add(A.pairKey(p.a.id, p.b.id));
+        everIntro.add(p.a.id); everIntro.add(p.b.id);
+        priority[p.a.id] = 0; priority[p.b.id] = 0;
+        if (r() < A.acceptChance(p.score) && r() < A.acceptChance(p.score)) { mutual++; everMutual.add(p.a.id); everMutual.add(p.b.id); }
+      }
+      for (const u of res.unmatched) priority[u.id] = (priority[u.id] || 0) + 1;
+      out.push({
+        week: w,
+        coverage: (res.pairs.length * 2) / users.length,
+        avgScore: avg(res.pairs.map((p) => p.score)),
+        mutualRate: res.pairs.length ? mutual / res.pairs.length : 0,
+        everMutual: everMutual.size / users.length,
+        everIntro: everIntro.size / users.length,
+      });
+    }
+    return out;
+  }
+
+  function avg(xs) { return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0; }
+
+  function compareAll(users) {
+    return { swipe: swipeFeed(users), greedy: bestPairsFirst(users), engine: engine(users), ceiling: ceiling(users) };
+  }
+
+  Object.assign(A, { swipeFeed, bestPairsFirst, engineRun: engine, weeks, compareAll, ceiling });
+  if (typeof module !== 'undefined' && module.exports) module.exports = A;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* UI for the prototype. All matching logic lives in engine.js. */
+(function () {
+  const A = window.Aymora;
+  const $ = (sel, el) => (el || document).querySelector(sel);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pct = (x) => Math.round(x * 100) + '%';
+
+  const CITIES = ['Bengaluru', 'Mumbai', 'Delhi', 'Pune', 'Hyderabad', 'Mangaluru', 'Chennai'];
+  const GENDERS = [['male', 'Man'], ['female', 'Woman'], ['nonbinary', 'Non-binary']];
+  const LABEL = {
+    intent: { marriage: 'Marriage in 2–3 years', long_term: 'Long-term, no timeline', exploring: 'Still working it out' },
+    kids: { yes: 'Wants children', open: 'Open on children', no: "Doesn't want children" },
+    conflict: { talk: 'Talks things out right away', time: 'Takes time, then talks', letgo: 'Lets things go' },
+    care: { words: 'Shows care in words', time: 'Shows care with time', acts: 'Shows care by doing', gifts: 'Shows care with small gifts', touch: 'Shows care through closeness' },
+    diet: { veg: 'Vegetarian', egg: 'Eggetarian', nonveg: 'Non-vegetarian' },
+    habits: { none: "Doesn't drink or smoke", drinks: 'Drinks socially', smokes: 'Smokes' },
+  };
+  const PART_LABEL = { intent: 'What you want', kids: 'Children', values: 'Values', personality: 'Personality', conflict: 'Handling conflict', care: 'Showing care', lifestyle: 'Lifestyle', interests: 'Shared interests' };
+
+  const STEPS = [
+    { id: 'basics', type: 'basics', q: 'First, the basics.' },
+    { id: 'intent', type: 'choice', q: 'What are you hoping Aymora helps you find?', options: [['marriage', 'A partner to marry in the next 2–3 years'], ['long_term', 'Something long-term, no fixed timeline'], ['exploring', "I'm still working out what I want"]] },
+    { id: 'kids', type: 'choice', q: 'Do you see children in your future?', options: [['yes', 'Yes'], ['open', "I'm open either way"], ['no', 'No']] },
+    { id: 'family', type: 'scale', path: ['values', 'family'], q: 'When a big decision comes up, how much does your family weigh in?', lo: 'I decide on my own', hi: 'We decide together' },
+    { id: 'ambition', type: 'scale', path: ['values', 'ambition'], q: 'Where does career sit in your life right now?', lo: 'One part of life', hi: 'The main focus' },
+    { id: 'tradition', type: 'scale', path: ['values', 'tradition'], q: 'Festivals, rituals and traditions are…', lo: 'Not really my thing', hi: 'Central to who I am' },
+    { id: 'social', type: 'scale', path: ['personality', 'social'], q: 'Friday night after a long week. You want…', lo: 'A quiet night in', hi: 'Big plans with friends' },
+    { id: 'planning', type: 'scale', path: ['personality', 'planning'], q: 'A weekend trip together. You would rather…', lo: 'Wing it', hi: 'Plan every hour' },
+    { id: 'conflict', type: 'choice', q: 'Something your partner did bothered you. You…', options: [['talk', 'Bring it up right away'], ['time', 'Take some time, then talk'], ['letgo', 'Let it go and move on']] },
+    { id: 'care', type: 'choice', q: 'How do you most naturally show you care?', options: [['words', 'Saying it out loud'], ['time', 'Making time for them'], ['acts', 'Doing things for them'], ['gifts', 'Small, thoughtful gifts'], ['touch', 'Being physically close']] },
+    { id: 'diet', type: 'choice', q: 'What do you eat?', options: [['veg', 'Vegetarian'], ['egg', 'Eggetarian'], ['nonveg', 'Non-vegetarian']] },
+    { id: 'habits', type: 'choice', q: 'Drinking and smoking.', options: [['none', 'Neither'], ['drinks', 'I drink socially'], ['smokes', 'I smoke']] },
+    { id: 'dealbreakers', type: 'multi', q: 'Any dealbreakers? Pick any that apply, or none.', options: [['smoker', 'A partner who smokes'], ['drinker', 'A partner who drinks'], ['nonveg', 'A non-vegetarian partner'], ['longdistance', 'Someone in another city']] },
+    { id: 'sunday', type: 'text', q: 'Describe your perfect Sunday in a sentence.', placeholder: 'A sunrise trek, then a long breakfast and a good book.' },
+  ];
+
+  function blankUser() {
+    return {
+      id: 'you', name: '', age: 24, gender: 'male', interestedIn: ['female'], city: 'Bengaluru', openToMove: false,
+      intent: null, kids: null, values: { family: null, ambition: null, tradition: null }, personality: { social: null, planning: null },
+      conflict: null, care: null, diet: null, habits: null, dealbreakers: [], sunday: '', tags: [], weights: {},
+    };
+  }
+
+  const state = {
+    view: 'quiz', step: 0, user: blankUser(),
+    pool: A.makePool(300, 2026), week: 1, history: new Set(), priority: {},
+    intro: null, decision: null, feedbackNote: '',
+  };
+
+  // ---------------------------------------------------------------------------
+  // Router
+  // ---------------------------------------------------------------------------
+  const TABS = ['try', 'engine', 'how'];
+  function route() {
+    const h = (location.hash || '#try').slice(1);
+    const tab = TABS.includes(h) ? h : 'try';
+    TABS.forEach((t) => { $('#view-' + t).hidden = t !== tab; });
+    document.querySelectorAll('.tabs a').forEach((a) => {
+      if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    if (tab === 'engine' && !engineRendered) runEngine();
+    if (tab === 'how') renderHow();
+  }
+  window.addEventListener('hashchange', route);
+
+  // ---------------------------------------------------------------------------
+  // Try it: the questionnaire
+  // ---------------------------------------------------------------------------
+  const flow = $('#flow');
+  function render() {
+    if (state.view === 'quiz') renderStep();
+    else if (state.view === 'profile') renderProfile();
+    else if (state.view === 'intro') renderIntro();
+  }
+
+  function getVal(step) {
+    const u = state.user;
+    if (step.path) return u[step.path[0]][step.path[1]];
+    return u[step.id];
+  }
+  function setVal(step, v) {
+    const u = state.user;
+    if (step.path) u[step.path[0]][step.path[1]] = v; else u[step.id] = v;
+  }
+
+  function renderStep() {
+    const step = STEPS[state.step];
+    const n = STEPS.length;
+    let body = '';
+    if (step.type === 'basics') {
+      const u = state.user;
+      body = `
+        <div class="fields">
+          <label class="field">Your first name<input type="text" id="f-name" value="${esc(u.name)}" placeholder="e.g. Kanak" autocomplete="given-name"></label>
+          <label class="field">Age<input type="number" id="f-age" min="18" max="60" value="${u.age}"></label>
+          <label class="field">I am a
+            <select id="f-gender">${GENDERS.map(([v, l]) => `<option value="${v}" ${u.gender === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          </label>
+          <label class="field">City
+            <select id="f-city">${CITIES.map((c) => `<option ${u.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+          </label>
+          <div class="field full">Interested in
+            <div class="opts" style="grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));">
+              ${GENDERS.map(([v, l]) => `<label class="opt"><input type="checkbox" name="f-int" id="f-int-${v}" value="${v}" ${u.interestedIn.includes(v) ? 'checked' : ''}>${l}</label>`).join('')}
+            </div>
+          </div>
+          <label class="opt full"><input type="checkbox" id="f-move" ${u.openToMove ? 'checked' : ''}>I'm open to moving cities for the right person</label>
+        </div>`;
+    } else if (step.type === 'choice' || step.type === 'multi') {
+      const cur = getVal(step);
+      const kind = step.type === 'multi' ? 'checkbox' : 'radio';
+      body = `<div class="opts" role="${kind === 'radio' ? 'radiogroup' : 'group'}" aria-label="${esc(step.q)}">
+        ${step.options.map(([v, l]) => {
+          const on = kind === 'radio' ? cur === v : (cur || []).includes(v);
+          return `<label class="opt"><input type="${kind}" name="opt" id="opt-${step.id}-${v}" value="${v}" ${on ? 'checked' : ''}>${esc(l)}</label>`;
+        }).join('')}
+      </div>`;
+    } else if (step.type === 'scale') {
+      const cur = getVal(step);
+      body = `<div class="scale">
+        <div class="scale-dots" role="radiogroup" aria-label="${esc(step.q)}">
+          ${[1, 2, 3, 4, 5].map((v) => `<label><input type="radio" name="opt" id="opt-${step.id}-${v}" value="${v}" ${cur === v ? 'checked' : ''}>${v}</label>`).join('')}
+        </div>
+        <div class="scale-ends"><span>1 · ${esc(step.lo)}</span><span>5 · ${esc(step.hi)}</span></div>
+      </div>`;
+    } else if (step.type === 'text') {
+      body = `<label class="field"><span class="muted small">We use this to suggest a first question, not to judge you.</span>
+        <textarea id="f-text" placeholder="${esc(step.placeholder)}">${esc(state.user.sunday)}</textarea></label>`;
+    }
+
+    flow.innerHTML = `
+      <div class="card fade">
+        <div class="progress">
+          <span class="mono small">${state.step + 1} / ${n}</span>
+          <div class="progress-bar" aria-hidden="true"><span style="width:${((state.step + 1) / n) * 100}%"></span></div>
+        </div>
+        <p class="q">${esc(step.q)}</p>
+        ${body}
+        <p class="small" id="step-error" style="color: var(--warn)" hidden></p>
+        <div class="row spread">
+          <div class="row">
+            ${state.step > 0 ? '<button class="btn ghost" type="button" id="back">Back</button>' : ''}
+            <button class="btn" type="button" id="next">${state.step === n - 1 ? 'Build my profile' : 'Continue'}</button>
+          </div>
+          ${state.step === 0 ? '<button class="btn link" type="button" id="sample">Skip with a sample person</button>' : ''}
+        </div>
+      </div>`;
+
+    if (step.type === 'choice' || step.type === 'scale') {
+      flow.querySelectorAll('input[name="opt"]').forEach((inp) => inp.addEventListener('change', () => {
+        setVal(step, step.type === 'scale' ? Number(inp.value) : inp.value);
+        setTimeout(next, 180);
+      }));
+    }
+    $('#next').addEventListener('click', next);
+    const back = $('#back');
+    if (back) back.addEventListener('click', () => { collect(step); state.step--; render(); });
+    const sample = $('#sample');
+    if (sample) sample.addEventListener('click', () => {
+      state.user = JSON.parse(JSON.stringify(A.SAMPLE_USER));
+      state.view = 'profile';
+      render();
+    });
+  }
+
+  function collect(step) {
+    const u = state.user;
+    if (step.type === 'basics') {
+      u.name = $('#f-name').value.trim();
+      u.age = Number($('#f-age').value) || u.age;
+      u.gender = $('#f-gender').value;
+      u.city = $('#f-city').value;
+      u.interestedIn = [...flow.querySelectorAll('input[name="f-int"]:checked')].map((i) => i.value);
+      u.openToMove = $('#f-move').checked;
+    } else if (step.type === 'multi') {
+      u[step.id] = [...flow.querySelectorAll('input[name="opt"]:checked')].map((i) => i.value);
+    } else if (step.type === 'text') {
+      u.sunday = $('#f-text').value.trim();
+    }
+  }
+
+  function next() {
+    const step = STEPS[state.step];
+    collect(step);
+    const err = $('#step-error');
+    const u = state.user;
+    let problem = '';
+    if (step.type === 'basics') {
+      if (!u.name) problem = 'Add a first name so your introductions can use it.';
+      else if (u.age < 18) problem = 'Aymora is for people 18 and older.';
+      else if (!u.interestedIn.length) problem = 'Choose at least one option under "Interested in".';
+    } else if ((step.type === 'choice' || step.type === 'scale') && getVal(step) == null) {
+      problem = 'Pick one option to continue.';
+    } else if (step.type === 'text' && u.sunday.length < 8) {
+      problem = 'Write a short sentence, even a simple one.';
+    }
+    if (problem) { if (err) { err.textContent = problem; err.hidden = false; } return; }
+
+    if (state.step < STEPS.length - 1) { state.step++; render(); return; }
+    u.tags = A.tagText(u.sunday);
+    state.view = 'profile';
+    render();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Profile + reach funnel
+  // ---------------------------------------------------------------------------
+  function pips(v) { return `<span class="pips" aria-label="${v} of 5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= v ? 'on' : ''}"></i>`).join('')}</span>`; }
+
+  function reach(u) {
+    let basic = 0, gates = 0, bar = 0;
+    for (const p of state.pool) {
+      const g = A.gate(u, p);
+      if (g !== 'preferences' && g !== 'age') basic++;
+      if (!g) { gates++; if (A.compatibility(u, p).score >= A.QUALITY_BAR) bar++; }
+    }
+    return { total: state.pool.length, basic, gates, bar };
+  }
+
+  function renderProfile() {
+    const u = state.user;
+    const r = reach(u);
+    const traits = [
+      ['Family in decisions', u.values.family, 'Independent', 'Together'],
+      ['Career focus', u.values.ambition, 'One part', 'Main focus'],
+      ['Tradition', u.values.tradition, 'Relaxed', 'Central'],
+      ['Social energy', u.personality.social, 'Quiet', 'Social'],
+      ['Planning', u.personality.planning, 'Spontaneous', 'Planner'],
+    ];
+    const row = (label, n) => `<div class="funnel-row"><div class="funnel-bar"><span style="width:${Math.max(2, (n / r.total) * 100)}%"></span><em>${label}</em></div><b>${n}</b></div>`;
+    flow.innerHTML = `
+      <div class="card fade">
+        <div class="block">
+          <p class="block-label">Your compatibility profile</p>
+          <h3>${esc(u.name)}, ${u.age} · ${esc(u.city)}</h3>
+          <div class="chips">
+            <span class="chip accent">${LABEL.intent[u.intent]}</span>
+            <span class="chip">${LABEL.kids[u.kids]}</span>
+            <span class="chip">${LABEL.conflict[u.conflict]}</span>
+            <span class="chip">${LABEL.care[u.care]}</span>
+            <span class="chip">${LABEL.diet[u.diet]}</span>
+            <span class="chip">${LABEL.habits[u.habits]}</span>
+            ${u.openToMove ? '<span class="chip">Open to moving</span>' : ''}
+          </div>
+        </div>
+        <div class="trait-list">
+          ${traits.map(([l, v, lo, hi]) => `<div class="trait"><span>${l}</span><div>${pips(v)}<div class="trait-ends"><span>${lo}</span><span>${hi}</span></div></div></div>`).join('')}
+        </div>
+        ${u.tags.length ? `<p class="small muted">From your perfect Sunday: ${u.tags.map((t) => `<span class="chip">${t}</span>`).join(' ')}</p>` : ''}
+        <div class="block">
+          <p class="block-label">Who you could meet in this demo pool</p>
+          <div class="funnel">
+            ${row('Everyone in the pool', r.total)}
+            ${row('Fit your gender and age preferences', r.basic)}
+            ${row('Also pass intentions, children and dealbreakers', r.gates)}
+            ${row(`Also clear the quality bar (${A.QUALITY_BAR}+)`, r.bar)}
+          </div>
+          <p class="small muted">Only the last group can be introduced to you. Hard requirements filter people out entirely; they are never traded off against a high score elsewhere.</p>
+        </div>
+        <div class="row spread">
+          <button class="btn" type="button" id="run">Run week ${state.week} matching</button>
+          <button class="btn link" type="button" id="redo">Change my answers</button>
+        </div>
+      </div>`;
+    $('#run').addEventListener('click', runWeek);
+    $('#redo').addEventListener('click', () => { state.view = 'quiz'; state.step = 0; render(); });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Weekly matching + introduction
+  // ---------------------------------------------------------------------------
+  function runWeek() {
+    const u = state.user;
+    const everyone = [u, ...state.pool];
+    const res = A.weeklyMatch(everyone, { history: state.history, priority: state.priority });
+    const mine = res.pairs.find((p) => p.a.id === 'you' || p.b.id === 'you');
+    const other = mine ? (mine.a.id === 'you' ? mine.b : mine.a) : null;
+
+    // where does this person rank among my own options?
+    let rank = null;
+    if (other) {
+      const scores = state.pool
+        .filter((p) => !state.history.has(A.pairKey('you', p.id)))
+        .map((p) => ({ p, c: A.compatibility(u, p) }))
+        .filter((x) => x.c.ok && x.c.score >= A.QUALITY_BAR)
+        .sort((x, y) => y.c.score - x.c.score);
+      rank = scores.findIndex((x) => x.p.id === other.id) + 1;
+    }
+
+    // update carry-over for everyone
+    for (const p of res.pairs) { state.priority[p.a.id] = 0; state.priority[p.b.id] = 0; state.history.add(A.pairKey(p.a.id, p.b.id)); }
+    for (const p of res.unmatched) state.priority[p.id] = (state.priority[p.id] || 0) + 1;
+
+    state.intro = {
+      week: state.week, other, res, rank,
+      options: res.options.you,
+      compat: other ? A.compatibility(u, other) : null,
+      explain: other ? A.explain(u, other) : null,
+      introducedCount: res.pairs.length * 2, total: everyone.length,
+    };
+    state.decision = null;
+    state.view = 'intro';
+    render();
+    flow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderIntro() {
+    const I = state.intro;
+    const u = state.user;
+    const weekline = `<div class="weekline"><span class="badge accent">Week ${I.week}</span><span>The engine introduced ${I.introducedCount} of ${I.total} people this week.</span></div>`;
+
+    if (!I.other) {
+      const none = I.options === 0;
+      flow.innerHTML = `
+        <div class="card fade">
+          ${weekline}
+          <h3>No introduction this week</h3>
+          <p>${none
+            ? `Nobody in this pool clears the quality bar for you right now${state.week > 1 ? ' who you haven\'t already been introduced to' : ''}. Aymora would rather hold your place than lower the bar.`
+            : `You had ${I.options} good options, but each of them was a closer fit for someone else this week.`}</p>
+          <p class="note">You move to the front of the queue next week. People who wait are matched first, so nobody waits twice in a row if they have any good option.</p>
+          <div class="row"><button class="btn" type="button" id="nextweek">Run week ${state.week + 1}</button><button class="btn link" type="button" id="redo">Change my answers</button></div>
+        </div>`;
+      $('#nextweek').addEventListener('click', () => { state.week++; runWeek(); });
+      $('#redo').addEventListener('click', () => { state.view = 'quiz'; state.step = 0; render(); });
+      return;
+    }
+
+    const o = I.other;
+    const c = I.compat;
+    const first = o.name.split(' ')[0];
+    const initials = o.name.split(' ').map((s) => s[0]).join('').slice(0, 2);
+    const bd = Object.keys(PART_LABEL).map((k) => `
+      <div class="bd-row"><span>${PART_LABEL[k]}</span><div class="bd-track"><span style="width:${Math.round(c.parts[k] * 100)}%"></span></div><b>${Math.round(c.weights[k] * 100)}%</b></div>`).join('');
+
+    let action = '';
+    if (!state.decision) {
+      action = `<div class="row"><button class="btn" type="button" id="yes">I'd like to meet ${esc(first)}</button><button class="btn ghost" type="button" id="no">Not this time</button></div>`;
+    } else if (state.decision === 'mutual') {
+      action = `<div class="outcome note good fade">
+        <span class="badge good">It's mutual</span>
+        <p>${esc(first)} said yes too. Aymora opens a private chat for the two of you, with photos shared now that you both chose to meet.</p>
+        <p class="small muted">Suggested first message: “${esc(I.explain.starter.replace(/^Ask \S+ /, 'I wanted to ask '))}”</p>
+        <div class="row"><button class="btn ghost" type="button" id="nextweek">See how week ${state.week + 1} would look</button></div>
+      </div>`;
+    } else if (state.decision === 'notmutual') {
+      action = `<div class="outcome note fade">
+        <span class="badge">Not mutual this time</span>
+        <p>${esc(first)} passed this week. Neither of you is told who said no, and nobody sees a rejection count.</p>
+        <div class="row"><button class="btn" type="button" id="nextweek">Run week ${state.week + 1}</button></div>
+      </div>`;
+    } else if (state.decision === 'no') {
+      const REASONS = [['stage', 'Different life stage'], ['values', 'Our values felt different'], ['vibe', "Our energy didn't match"], ['distance', 'Too far away']];
+      action = `<div class="outcome note fade">
+        <p><b>What felt off?</b> <span class="muted">Optional. It changes how your next introductions are weighted.</span></p>
+        <div class="row" role="group" aria-label="Reason">${REASONS.map(([v, l]) => `<button class="chip-btn" type="button" data-reason="${v}" aria-pressed="false">${l}</button>`).join('')}</div>
+        <p class="small" id="fb-note">${esc(state.feedbackNote)}</p>
+        <div class="row"><button class="btn" type="button" id="nextweek">Run week ${state.week + 1}</button></div>
+      </div>`;
+    }
+
+    flow.innerHTML = `
+      <div class="card fade">
+        ${weekline}
+        <div class="intro-head">
+          <div class="avatar" aria-hidden="true">${esc(initials)}</div>
+          <div class="intro-who">
+            <p class="block-label">Your introduction</p>
+            <h3>${esc(o.name)}</h3>
+            <p class="muted">${o.age} · ${esc(o.city)} · ${LABEL.intent[o.intent]}</p>
+          </div>
+          <div class="score"><b class="mono">${c.score}</b><span>compatibility</span></div>
+        </div>
+        <p class="photo-note">Photos appear once you both say yes. First impressions here come from who someone is.</p>
+        <div class="block">
+          <p class="block-label">Why we think you two fit</p>
+          <ul class="reasons">${I.explain.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+        </div>
+        <div class="block">
+          <p class="block-label">Worth talking about</p>
+          <p class="note">${esc(I.explain.difference)}</p>
+        </div>
+        <div class="block">
+          <p class="block-label">A first question</p>
+          <p class="note starter">${esc(I.explain.starter)}</p>
+        </div>
+        <p class="small muted">${I.rank <= 3 ? `${esc(first)} is #${I.rank} of your ${I.options} options above the bar. ` : `You had ${I.options} options above the bar this week. `}The engine pairs everyone at once, so your top score on paper may be someone else's only good option.</p>
+        <details class="breakdown">
+          <summary>See the full score breakdown</summary>
+          <div class="bd">
+            <div class="bd-row small muted"><span>Dimension</span><span>How aligned you are</span><b>Weight</b></div>
+            ${bd}
+            ${c.distance ? `<p class="small muted">Different cities: −${c.distance} points.</p>` : ''}
+          </div>
+        </details>
+        ${action}
+      </div>`;
+
+    const yes = $('#yes');
+    if (yes) yes.addEventListener('click', () => {
+      state.decision = Math.random() < A.acceptChance(c.score) ? 'mutual' : 'notmutual';
+      renderIntro();
+    });
+    const no = $('#no');
+    if (no) no.addEventListener('click', () => { state.decision = 'no'; state.feedbackNote = ''; renderIntro(); });
+    flow.querySelectorAll('[data-reason]').forEach((b) => b.addEventListener('click', () => applyFeedback(b)));
+    const nw = $('#nextweek');
+    if (nw) nw.addEventListener('click', () => { state.week++; runWeek(); });
+  }
+
+  function applyFeedback(btn) {
+    const u = state.user;
+    const reason = btn.dataset.reason;
+    const bump = (k, f) => { u.weights[k] = Math.min(2.5, (u.weights[k] || 1) * f); };
+    let note = '';
+    if (reason === 'stage') { bump('intent', 1.4); bump('kids', 1.3); note = 'Next week, what you want and plans for children count 40% more in your matches.'; }
+    if (reason === 'values') { bump('values', 1.4); note = 'Next week, values count 40% more in your matches.'; }
+    if (reason === 'vibe') { bump('personality', 1.4); bump('interests', 1.2); note = 'Next week, personality and shared interests count more in your matches.'; }
+    if (reason === 'distance') { u.distanceCare = Math.min(4, (u.distanceCare || 1) * 2); note = 'Next week, people in other cities need a much stronger fit to be introduced.'; }
+    flow.querySelectorAll('[data-reason]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    state.feedbackNote = note;
+    $('#fb-note').textContent = note;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Under the hood
+  // ---------------------------------------------------------------------------
+  let engineRendered = false;
+  let seed = 2026;
+  $('#pool-size').addEventListener('change', runEngine);
+  $('#new-pool').addEventListener('click', () => { seed = Math.floor(Math.random() * 1e6); runEngine(); });
+
+  function runEngine() {
+    engineRendered = true;
+    const out = $('#engine-out');
+    out.innerHTML = '<p class="muted">Running the simulation…</p>';
+    setTimeout(() => {
+      const size = Number($('#pool-size').value);
+      const users = A.makePool(size, seed);
+      const t0 = performance.now();
+      const cmp = A.compareAll(users);
+      const wk = A.weeks(users, 4, seed + 1);
+      const ms = Math.round(performance.now() - t0);
+      $('#sim-meta').textContent = `pool #${seed} · ${size} people · computed in ${ms} ms`;
+      renderEngine(out, users, cmp, wk);
+    }, 30);
+  }
+
+  function renderEngine(out, users, cmp, wk) {
+    const { swipe, greedy, engine } = cmp;
+    const res = engine.result;
+    const noOption = res.unmatched.filter((u) => res.options[u.id] === 0);
+    const outnumbered = res.unmatched.filter((u) => res.options[u.id] > 0);
+    const og = countBy(outnumbered, (u) => u.gender);
+    const reachG = countBy(users.filter((u) => res.options[u.id] > 0), (u) => u.gender);
+    const unmatchedReach = Object.keys(reachG).filter((g) => og[g]).map((g) => `${og[g]} ${g === 'male' ? (og[g] === 1 ? 'man' : 'men') : g === 'female' ? (og[g] === 1 ? 'woman' : 'women') : (og[g] === 1 ? 'non-binary person' : 'non-binary people')}`).join(', ');
+
+    const bars = [
+      ['Swipe feed', swipe.coverage, false],
+      ['Best pairs first', greedy.coverage, false],
+      ['Aymora weekly engine', engine.coverage, true],
+      ['Have at least one good option', cmp.ceiling, false],
+    ];
+
+    out.innerHTML = `
+      <div class="panel">
+        <h3>This week, one pool, three strategies</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th class="num">Swipe feed</th><th class="num">Best pairs first</th><th class="num ours">Aymora engine</th></tr></thead>
+          <tbody>
+            <tr><th>People with a match or introduction<span class="why">Out of everyone in the pool</span></th><td class="num">${pct(swipe.coverage)}</td><td class="num">${pct(greedy.coverage)}</td><td class="num ours"><b>${pct(engine.coverage)}</b></td></tr>
+            <tr><th>Matches that clear the quality bar<span class="why">Pass every hard requirement and score ${A.QUALITY_BAR}+</span></th><td class="num">${pct(swipe.goodShare)}</td><td class="num">100%</td><td class="num ours"><b>100%</b></td></tr>
+            <tr><th>Average compatibility of matches<span class="why">Blocked pairs count as 0</span></th><td class="num">${Math.round(swipe.avgScore)}</td><td class="num">${Math.round(greedy.avgScore)}</td><td class="num ours"><b>${Math.round(engine.avgScore)}</b></td></tr>
+            <tr><th>Likes going to the top 10% of profiles<span class="why">How concentrated attention is</span></th><td class="num">${pct(swipe.topShare)}</td><td class="num">n/a</td><td class="num ours">n/a</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small muted">Swipe feed: each person sees 40 random profiles and likes mostly by photo appeal. Best pairs first: take the highest-scoring pairs and work down. Aymora engine: constrained people first, then re-pair to fit more people in, then swap pairs to raise total quality.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Who got someone this week</h3>
+          <div class="hbars">
+            ${bars.map(([l, v, ours]) => `<div class="hbar ${ours ? 'ours' : ''}"><div class="hbar-top"><span>${l}</span><b>${pct(v)}</b></div><div class="hbar-track"><span style="width:${v * 100}%"></span></div></div>`).join('')}
+          </div>
+          <p class="callout small">${greedy.avgScore > engine.avgScore
+            ? `Best pairs first gives a slightly higher average score, but it strands people whose only good option was taken by someone with plenty of options. The engine gives up ${(greedy.avgScore - engine.avgScore).toFixed(1)} points of average score to introduce ${Math.round((engine.coverage - greedy.coverage) * users.length)} more people, and every one of them still clears the bar.`
+            : `The engine introduces ${Math.round((engine.coverage - greedy.coverage) * users.length)} more people than best pairs first without lowering the average score.`}</p>
+        </div>
+        <div class="panel">
+          <h3>Why ${res.unmatched.length} people got nobody</h3>
+          <ul class="plain">
+            <li><b>${noOption.length}</b> had no one above the quality bar. Their preferences and dealbreakers are strict for a pool this size. Lowering the bar would break the "no quality compromise" promise, so they wait.</li>
+            <li><b>${outnumbered.length}</b> had good options, but all of them were introduced to someone. ${unmatchedReach ? `These are ${unmatchedReach}: the pool has more of them than people looking for them.` : ''}</li>
+          </ul>
+          <p class="callout small">Of the people who had at least one good option, the engine introduced ${pct(engine.coverage / cmp.ceiling)}. Everyone it left out had all of their options already introduced to someone, with no chain of re-pairings that could free one up. Past that point the limit is supply, not the algorithm. That is why the gender question on Aymora's waitlist matters: early-access waves can be released by city and gender balance so the weekly promise stays true.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Four weeks in a row</h3>
+        <p class="small muted">No one is introduced to the same person twice. Anyone left out goes first the next week. Each side says yes with a probability that rises with the score.</p>
+        ${weekChart(wk)}
+        <div class="legend">
+          <span><i style="background: var(--accent)"></i>Had at least one introduction so far</span>
+          <span><i style="background: var(--good)"></i>Had at least one mutual match so far</span>
+          <span><i style="background: var(--series-2)"></i>Introduced that week</span>
+        </div>
+        <p class="callout small">By week 2, ${pct(wk[1].everIntro)} of people have had an introduction${Math.abs(wk[1].everIntro - cmp.ceiling) < 0.005 ? ', which is everyone who has any good option' : ''}. Within four weeks, ${pct(wk[3].everMutual)} have had a mutual match.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Assumptions behind these numbers</h3>
+        <ul class="plain small muted">
+          <li>The pool is generated: city mix weighted to large Indian metros, a 48/48/4 gender split, about 35% of people looking for marriage soon, and a skewed "photo appeal" that only the swipe baseline uses.</li>
+          <li>Compatibility uses the same scoring the Try it tab uses. In a real launch the weights would be learned from which introductions turn into mutual matches and second dates.</li>
+          <li>Acceptance probabilities are illustrative. Treat the four-week figures as the shape of the result, not a forecast.</li>
+        </ul>
+      </div>`;
+  }
+
+  function weekChart(wk) {
+    const W = 640, H = 240, L = 44, R = 56, T = 16, B = 34;
+    const x = (i) => L + (i * (W - L - R)) / (wk.length - 1);
+    const y = (v) => T + (1 - v) * (H - T - B);
+    const series = [['coverage', 'var(--series-2)'], ['everMutual', 'var(--good)'], ['everIntro', 'var(--accent)']];
+    // end labels sit right of the last point, nudged apart so they never overlap
+    const ends = series.map(([k, c]) => ({ k, c, v: wk[wk.length - 1][k], y: y(wk[wk.length - 1][k]) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 15) ends[i].y = ends[i - 1].y + 15;
+    const line = (key, color) => {
+      const pts = wk.map((w, i) => `${x(i).toFixed(1)},${y(w[key]).toFixed(1)}`).join(' ');
+      const dots = wk.map((w, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(w[key]).toFixed(1)}" r="4" fill="${color}"/>`).join('');
+      const e = ends.find((d) => d.k === key);
+      return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}<text x="${x(wk.length - 1) + 10}" y="${(e.y + 4).toFixed(1)}" font-size="12" fill="${color}" font-family="var(--mono)">${pct(e.v)}</text>`;
+    };
+    const grid = [0, 0.25, 0.5, 0.75, 1].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--mono)">${v * 100}%</text>`).join('');
+    const xl = wk.map((w, i) => `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="var(--body)">Week ${w.week}</text>`).join('');
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of people introduced and matched over four weeks">${grid}${xl}${line('coverage', 'var(--series-2)')}${line('everMutual', 'var(--good)')}${line('everIntro', 'var(--accent)')}</svg></div>`;
+  }
+
+  function countBy(xs, f) { const o = {}; for (const x of xs) { const k = f(x); o[k] = (o[k] || 0) + 1; } return o; }
+
+  // ---------------------------------------------------------------------------
+  // How it works
+  // ---------------------------------------------------------------------------
+  let howRendered = false;
+  function renderHow() {
+    if (howRendered) return;
+    howRendered = true;
+    const w = A.BASE_WEIGHTS;
+    $('#how-out').innerHTML = `
+      <div class="panel">
+        <ol class="steps">
+          <li><div><h3>A short questionnaire</h3><p>Thirteen questions about intentions, children, values, personality, conflict, care, lifestyle and a free-text perfect Sunday. Each answer maps to a structured trait, so nothing depends on photos.</p></div></li>
+          <li><div><h3>Hard requirements first</h3><p>Gender preference, an age gap of ${A.MAX_AGE_GAP} years or less, compatible intentions (marriage soon and "still exploring" never meet), children, personal dealbreakers, and distance when neither person would move. A pair that fails any of these is never introduced, whatever else they share.</p></div></li>
+          <li><div><h3>An explainable compatibility score</h3><p>Eight dimensions, each scored 0 to 1 and weighted. Some reward similarity (values, social energy), some allow healthy difference (a planner with a semi-planner), and conflict styles use a matrix because two avoiders rarely resolve anything. Only pairs scoring ${A.QUALITY_BAR}+ can be introduced.</p></div></li>
+          <li><div><h3>Weekly matching for the whole pool</h3><p>People who waited last week go first, then people with the fewest good options. Each takes their best free option. A second pass looks for chains of re-pairings that fit in anyone left out, and a third swaps pairs whenever that raises the total score.</p></div></li>
+          <li><div><h3>An introduction a person can trust</h3><p>Three reasons drawn from the strongest parts of the score, one honest difference worth talking about, and a first question from both people's answers. Photos and chat open only when both say yes.</p></div></li>
+          <li><div><h3>Feedback that changes next week</h3><p>When someone passes and says why, their personal weights shift. "Different life stage" makes intentions count more for them next week; "too far away" makes distance cost more.</p></div></li>
+        </ol>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Starting weights</h3>
+          <div class="bd">${Object.keys(w).map((k) => `<div class="bd-row"><span>${PART_LABEL[k]}</span><div class="bd-track"><span style="width:${(w[k] / 0.24) * 100}%"></span></div><b>${Math.round(w[k] * 100)}%</b></div>`).join('')}</div>
+          <p class="small muted">Hand-set for the prototype. With real outcomes these become learned per city and per intention.</p>
+        </div>
+        <div class="panel">
+          <h3>What I'd build next</h3>
+          <ul class="plain">
+            <li>Use a language model to read free-text answers for values and tone, not just keywords, and to write the introduction in Aymora's voice.</li>
+            <li>Learn the weights from which introductions become mutual matches and second dates.</li>
+            <li>Release waitlist waves by city and gender balance so every active member can get a weekly introduction.</li>
+            <li>Verification and safety checks before anyone enters the weekly pool.</li>
+          </ul>
+        </div>
+      </div>`;
+  }
+
+  render();
+  route();
+})();
+
+</script>
+</body>
+</html>

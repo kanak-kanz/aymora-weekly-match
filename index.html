@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aymora Weekly Match Engine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A working prototype of a weekly, explainable matchmaking engine for Aymora.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#try" aria-label="Aymora Weekly Match Engine">
+      <span class="wordmark">aymora</span>
+      <span class="brand-sub">Weekly Match Engine</span>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#try" data-tab="try">Try it</a>
+      <a href="#engine" data-tab="engine">Under the hood</a>
+      <a href="#how" data-tab="how">How it works</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- TRY IT -->
+  <section id="view-try" class="view">
+    <div class="hero">
+      <p class="eyebrow">Prototype · Aymora Tech Challenge</p>
+      <h1>One introduction a week, <em>chosen for everyone at once.</em></h1>
+      <p class="lede">Aymora promises at least one meaningful match every week, with no quality compromise. Picking each person's top match doesn't keep that promise, because the same few people end up at the top of everyone's list. This engine scores compatibility, explains every introduction, and pairs the whole pool together each week so the promise holds.</p>
+    </div>
+
+    <div class="flow" id="flow" aria-live="polite"></div>
+  </section>
+
+  <!-- UNDER THE HOOD -->
+  <section id="view-engine" class="view" hidden>
+    <div class="section-head">
+      <p class="eyebrow">Simulation on synthetic people</p>
+      <h2>Same pool, three ways to match</h2>
+      <p class="lede">Every number below is computed live in your browser on a generated pool of people. Change the pool size or draw a new pool to see how the results hold up.</p>
+    </div>
+    <div class="controls">
+      <label for="pool-size">Pool size</label>
+      <select id="pool-size">
+        <option value="200">200 people</option>
+        <option value="300" selected>300 people</option>
+        <option value="500">500 people</option>
+      </select>
+      <button class="btn ghost" id="new-pool" type="button">Draw a new pool</button>
+      <span class="mono small" id="sim-meta"></span>
+    </div>
+    <div id="engine-out"><p class="muted">Running the simulation…</p></div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="view-how" class="view" hidden>
+    <div class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2>From questionnaire to Sunday introduction</h2>
+    </div>
+    <div id="how-out"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Built by Kanak Tanwar for the Aymora Tech Challenge. Independent prototype, not affiliated with Aymora. Everyone in the pool is generated; no real people or data.</p>
+</footer>
+
+<script src="engine.js"></script>
+<script src="pool.js"></script>
+<script src="simulate.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

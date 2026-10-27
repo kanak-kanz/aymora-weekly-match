@@ -1,0 +1,13 @@
+{
+  "name": "aymora-weekly-match",
+  "version": "1.0.0",
+  "description": "Prototype of a weekly, explainable matchmaking engine for Aymora.",
+  "private": true,
+  "scripts": {
+    "test": "node --test engine.test.js",
+    "build": "node build-single.js",
+    "start": "npx --yes serve ."
+  },
+  "author": "Kanak Tanwar",
+  "license": "MIT"
+}
